@@ -4,7 +4,7 @@
 # Make sure to replace YOUR_API_TOKEN with your actual admin token
 
 API_BASE_URL="http://localhost:8000/api"
-# For production: API_BASE_URL="https://niconluxury.jubileesystem.com/api"
+# For production: API_BASE_URL="https://backend.chibenhotels.com/api"
 
 TOKEN="YOUR_API_TOKEN"
 

@@ -30,7 +30,7 @@
         <hr style="margin: 30px 0; border: none; border-top: 1px solid #eee;">
         <p style="color: #666; font-size: 14px;">
             Best regards,<br>
-            NICON Luxury Hotel Team
+            CHIBEN LEISURE HOTELS Hotel Team
         </p>
     </div>
 </body>

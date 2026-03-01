@@ -177,7 +177,7 @@ The booking confirmation email includes a link to this page:
 
 **Example URL:**
 ```
-https://niconluxury.com/bookings/123
+https://chibenhotels.com/bookings/123
 ```
 
 ---
