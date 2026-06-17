@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Booking;
 use App\Models\Room;
+use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Http;
@@ -35,12 +36,15 @@ class PaymentController extends Controller
             ], 422);
         }
 
+        $frontendBase = config('services.frontend.base_url', 'https://www.chibenhotels.com');
+        $callbackUrl = rtrim($frontendBase, '/') . '/payment/callback?booking_id=' . $booking->id;
+
         $payload = [
             'email' => $booking->guest_email,
             'amount' => $amountKobo,
             'reference' => $reference,
             'currency' => config('services.paystack.currency', 'NGN'),
-            'callback_url' => config('services.paystack.callback_url'),
+            'callback_url' => $callbackUrl,
             'metadata' => [
                 'booking_id' => $booking->id,
             ],
@@ -58,6 +62,16 @@ class PaymentController extends Controller
 
         $authUrl = $resp->json('data.authorization_url');
 
+        Transaction::create([
+            'booking_id' => $booking->id,
+            'reference' => $reference,
+            'gateway' => 'paystack',
+            'amount' => $booking->amount,
+            'currency' => config('services.paystack.currency', 'NGN'),
+            'status' => 'initiated',
+            'ip_address' => $request->ip(),
+        ]);
+
         return response()->json([
             'message' => 'Payment session initiated.',
             'payment_reference' => $reference,
@@ -69,22 +83,24 @@ class PaymentController extends Controller
 
     public function confirm(Request $request)
     {
-        // Support Paystack callback where ref comes as `reference`
         $ref = $request->input('payment_reference', $request->input('reference'));
-        $request->merge(['payment_reference' => $ref]);
-        
-        $data = $request->validate([
-            'payment_reference' => 'required|string',
-            'booking_id' => 'sometimes|exists:bookings,id',
-        ]);
 
-        $booking = isset($data['booking_id'])
-            ? Booking::findOrFail($data['booking_id'])
-            : Booking::where('payment_reference', $data['payment_reference'])->firstOrFail();
+        if (!$ref || !is_string($ref)) {
+            return response()->json(['message' => 'Missing payment reference.'], 400);
+        }
+
+        $bookingId = $request->input('booking_id');
+        $booking = $bookingId
+            ? Booking::find($bookingId)
+            : Booking::where('payment_reference', $ref)->first();
+
+        if (!$booking) {
+            return response()->json(['message' => 'Booking not found for the given reference.'], 404);
+        }
 
         // Verify transaction via Paystack API
         $resp = Http::withToken(config('services.paystack.secret'))
-            ->get('https://api.paystack.co/transaction/verify/' . urlencode($data['payment_reference']));
+            ->get('https://api.paystack.co/transaction/verify/' . urlencode($ref));
 
         if ($resp->failed()) {
             return response()->json([
@@ -94,10 +110,23 @@ class PaymentController extends Controller
 
         $dataStatus = $resp->json('data.status');
         $gatewayResponse = $resp->json('data.gateway_response');
+
+        // Log transaction
+        Transaction::create([
+            'booking_id' => $booking->id,
+            'reference' => $ref,
+            'gateway' => 'paystack',
+            'amount' => $booking->amount,
+            'currency' => config('services.paystack.currency', 'NGN'),
+            'status' => $dataStatus === 'success' ? 'success' : $dataStatus,
+            'gateway_response' => $resp->json('data'),
+            'ip_address' => $request->ip(),
+        ]);
+
         if ($dataStatus === 'success') {
             // Ensure booking stores the correct reference
             if (!$booking->payment_reference) {
-                $booking->payment_reference = $data['payment_reference'];
+                $booking->payment_reference = $ref;
             }
             $booking->status = 'confirmed';
             $booking->save();
@@ -131,7 +160,7 @@ class PaymentController extends Controller
         // Treat non-fatal statuses as pending; don't cancel or release room yet
         if (in_array($dataStatus, ['abandoned', 'timeout', 'pending'], true)) {
             if (!$booking->payment_reference) {
-                $booking->payment_reference = $data['payment_reference'];
+                $booking->payment_reference = $ref;
             }
             $booking->status = 'pending';
             $booking->save();
@@ -181,6 +210,18 @@ class PaymentController extends Controller
 
         if ($reference) {
             $booking = Booking::where('payment_reference', $reference)->first();
+
+            Transaction::create([
+                'booking_id' => $booking?->id,
+                'reference' => $reference,
+                'gateway' => 'paystack',
+                'amount' => $booking?->amount ?? 0,
+                'currency' => config('services.paystack.currency', 'NGN'),
+                'status' => $status ?? $event,
+                'gateway_response' => $data,
+                'ip_address' => $request->ip(),
+            ]);
+
             if ($booking) {
                 if ($event === 'charge.success' || $status === 'success') {
                     $booking->status = 'confirmed';

@@ -40,4 +40,9 @@ class Booking extends Model
         return $this->belongsTo(Room::class);
     }
 
+    public function transactions(): HasMany
+    {
+        return $this->hasMany(Transaction::class);
+    }
+
 }

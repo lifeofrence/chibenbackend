@@ -214,7 +214,7 @@ class SqsQueue extends Queue implements QueueContract, ClearableQueue
      * @param  \DateTimeInterface|\DateInterval|int|null  $delay
      * @return array{DelaySeconds?: int, MessageGroupId?: string, MessageDeduplicationId?: string}
      */
-    protected function getQueueableOptions($job, $queue, $payload, $delay = null): array
+    public function getQueueableOptions($job, $queue, $payload, $delay = null): array
     {
         // Make sure we have a queue name to properly determine if it's a FIFO queue...
         $queue ??= $this->default;
@@ -234,7 +234,7 @@ class SqsQueue extends Queue implements QueueContract, ClearableQueue
             return $options;
         }
 
-        $transformToString = fn ($value) => strval($value);
+        $transformToString = fn ($value) => (string) $value;
 
         // The message group ID is required for FIFO queues and is optional for
         // standard queues. Job objects contain a group ID. With string jobs
@@ -242,7 +242,7 @@ class SqsQueue extends Queue implements QueueContract, ClearableQueue
         $messageGroupId = null;
 
         if ($isObject) {
-            $messageGroupId = transform($job->messageGroup ?? null, $transformToString);
+            $messageGroupId = transform($job->messageGroup ?? (method_exists($job, 'messageGroup') ? $job->messageGroup() : null), $transformToString);
         } elseif ($isFifo) {
             $messageGroupId = transform($queue, $transformToString);
         }

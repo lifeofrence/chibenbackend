@@ -54,6 +54,7 @@ Route::get('/rooms/{id}', [RoomTypeController::class, 'show'])->whereNumber('id'
 Route::get('/bookings/availability', [BookingController::class, 'availability']);
 Route::post('/bookings', [BookingController::class, 'store']);
 Route::put('/bookings/cancel/{id}', [BookingController::class, 'cancelled'])->whereNumber('id');
+Route::get('/bookings/{id}', [BookingController::class, 'show'])->whereNumber('id');
 Route::post('/payments/initiate', [PaymentController::class, 'initiate']);
 Route::match(['get', 'post'], '/payments/confirm', [PaymentController::class, 'confirm']);
 Route::post('/payments/webhook', [PaymentController::class, 'webhook']);

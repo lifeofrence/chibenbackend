@@ -2,6 +2,7 @@
 
 namespace Illuminate\Foundation\Concerns;
 
+use Illuminate\Support\Str;
 use Throwable;
 
 trait ResolvesDumpSource
@@ -12,6 +13,7 @@ trait ResolvesDumpSource
      * @var array<string, string>
      */
     protected $editorHrefs = [
+        'antigravity' => 'antigravity://file/{file}:{line}',
         'atom' => 'atom://core/open/file?filename={file}&line={line}',
         'cursor' => 'cursor://file/{file}:{line}',
         'emacs' => 'emacs://open?url=file://{file}&line={line}',
@@ -19,6 +21,7 @@ trait ResolvesDumpSource
         'idea' => 'idea://open?file={file}&line={line}',
         'kiro' => 'kiro://file/{file}:{line}',
         'macvim' => 'mvim://open/?url=file://{file}&line={line}',
+        'neovim' => 'nvim://open?url=file://{file}&line={line}',
         'netbeans' => 'netbeans://open/?f={file}:{line}',
         'nova' => 'nova://core/open/file?filename={file}&line={line}',
         'phpstorm' => 'phpstorm://open?file={file}&line={line}',
@@ -167,8 +170,10 @@ trait ResolvesDumpSource
             ? $editor['href']
             : ($this->editorHrefs[$editor['name'] ?? $editor] ?? sprintf('%s://open?file={file}&line={line}', $editor['name'] ?? $editor));
 
-        if ($basePath = $editor['base_path'] ?? false) {
-            $file = str_replace($this->basePath, $basePath, $file);
+        $basePath = $editor['base_path'] ?? false;
+
+        if ($basePath !== false) {
+            $file = Str::replaceStart($this->basePath, $basePath, $file);
         }
 
         return str_replace(

@@ -113,38 +113,49 @@ class Exception
      */
     public function frames()
     {
-        $classMap = once(fn () => array_map(function ($path) {
-            return (string) realpath($path);
-        }, array_values(ClassLoader::getRegisteredLoaders())[0]->getClassMap()));
+        return once(function () {
+            $classMap = array_map(function ($path) {
+                return (string) realpath($path);
+            }, array_values(ClassLoader::getRegisteredLoaders())[0]->getClassMap());
 
-        $trace = array_values(array_filter(
-            $this->exception->getTrace(), fn ($trace) => isset($trace['file']),
-        ));
+            $trace = $this->exception->getTrace();
 
-        if (($trace[1]['class'] ?? '') === HandleExceptions::class) {
-            array_shift($trace);
-            array_shift($trace);
-        }
-
-        $frames = [];
-        $previousFrame = null;
-
-        foreach (array_reverse($trace) as $frameData) {
-            $frame = new Frame($this->exception, $classMap, $frameData, $this->basePath, $previousFrame);
-            $frames[] = $frame;
-            $previousFrame = $frame;
-        }
-
-        $frames = array_reverse($frames);
-
-        foreach ($frames as $frame) {
-            if (! $frame->isFromVendor()) {
-                $frame->markAsMain();
-                break;
+            if (count($trace) > 1 && empty($trace[0]['class']) && empty($trace[0]['function'])) {
+                $trace[0]['class'] = $trace[1]['class'] ?? '';
+                $trace[0]['type'] = $trace[1]['type'] ?? '';
+                $trace[0]['function'] = $trace[1]['function'] ?? '';
+                $trace[0]['args'] = $trace[1]['args'] ?? [];
             }
-        }
 
-        return new Collection($frames);
+            $trace = array_values(array_filter(
+                $trace, fn ($trace) => isset($trace['file']),
+            ));
+
+            if (($trace[1]['class'] ?? '') === HandleExceptions::class) {
+                array_shift($trace);
+                array_shift($trace);
+            }
+
+            $frames = [];
+            $previousFrame = null;
+
+            foreach (array_reverse($trace) as $frameData) {
+                $frame = new Frame($this->exception, $classMap, $frameData, $this->basePath, $previousFrame);
+                $frames[] = $frame;
+                $previousFrame = $frame;
+            }
+
+            $frames = array_reverse($frames);
+
+            foreach ($frames as $frame) {
+                if (! $frame->isFromVendor()) {
+                    $frame->markAsMain();
+                    break;
+                }
+            }
+
+            return new Collection($frames);
+        });
     }
 
     /**
