@@ -35,6 +35,7 @@ return array(
     'App\\Models\\RoomType' => $baseDir . '/app/Models/RoomType.php',
     'App\\Models\\RoomTypeImage' => $baseDir . '/app/Models/RoomTypeImage.php',
     'App\\Models\\Setting' => $baseDir . '/app/Models/Setting.php',
+    'App\\Models\\Transaction' => $baseDir . '/app/Models/Transaction.php',
     'App\\Models\\User' => $baseDir . '/app/Models/User.php',
     'App\\Providers\\AppServiceProvider' => $baseDir . '/app/Providers/AppServiceProvider.php',
     'Attribute' => $vendorDir . '/symfony/polyfill-php80/Resources/stubs/Attribute.php',
