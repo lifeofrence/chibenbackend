@@ -24,10 +24,6 @@ class PaymentController extends Controller
 
         $booking = Booking::findOrFail($data['booking_id']);
 
-        // Generate a unique reference and store on booking
-        $reference = 'PAY-' . Str::upper(Str::random(12));
-        $booking->update(['payment_reference' => $reference]);
-
         // Paystack requires amount in kobo (NGN minor unit)
         $amountKobo = (int) round(($booking->amount ?? 0) * 100);
         if ($amountKobo <= 0) {
@@ -35,6 +31,9 @@ class PaymentController extends Controller
                 'message' => 'Invalid booking amount for payment.',
             ], 422);
         }
+
+        // Generate a unique reference
+        $reference = 'PAY-' . Str::upper(Str::random(12));
 
         $frontendBase = config('services.frontend.base_url', 'https://www.chibenhotels.com');
         $callbackUrl = rtrim($frontendBase, '/') . '/payment/callback?booking_id=' . $booking->id;
@@ -60,13 +59,16 @@ class PaymentController extends Controller
             ], 502);
         }
 
+        // Only update booking and create transaction after Paystack confirms initialization
+        $booking->update(['payment_reference' => $reference]);
+
         $authUrl = $resp->json('data.authorization_url');
 
         Transaction::create([
             'booking_id' => $booking->id,
             'reference' => $reference,
             'gateway' => 'paystack',
-            'amount' => $booking->amount,
+            'amount' => $booking->amount ?? 0,
             'currency' => config('services.paystack.currency', 'NGN'),
             'status' => 'initiated',
             'ip_address' => $request->ip(),
@@ -103,25 +105,38 @@ class PaymentController extends Controller
             ->get('https://api.paystack.co/transaction/verify/' . urlencode($ref));
 
         if ($resp->failed()) {
+            $paystackMessage = $resp->json('message');
             return response()->json([
-                'message' => 'Failed to verify payment with Paystack.',
+                'message' => $paystackMessage ?: 'Failed to verify payment with Paystack.',
+                'paystack_response' => $resp->json(),
             ], 502);
+        }
+
+        // Paystack may return 200 with status: false
+        if (!$resp->json('status')) {
+            $paystackMessage = $resp->json('message', 'Payment verification failed on Paystack.');
+            return response()->json([
+                'message' => $paystackMessage,
+                'paystack_response' => $resp->json(),
+            ], 400);
         }
 
         $dataStatus = $resp->json('data.status');
         $gatewayResponse = $resp->json('data.gateway_response');
 
-        // Log transaction
-        Transaction::create([
-            'booking_id' => $booking->id,
-            'reference' => $ref,
-            'gateway' => 'paystack',
-            'amount' => $booking->amount,
-            'currency' => config('services.paystack.currency', 'NGN'),
-            'status' => $dataStatus === 'success' ? 'success' : $dataStatus,
-            'gateway_response' => $resp->json('data'),
-            'ip_address' => $request->ip(),
-        ]);
+        // Log transaction - update existing if reference already exists (e.g. from initiate)
+        Transaction::updateOrCreate(
+            ['reference' => $ref],
+            [
+                'booking_id' => $booking->id,
+                'gateway' => 'paystack',
+                'amount' => $booking->amount ?? 0,
+                'currency' => config('services.paystack.currency', 'NGN'),
+                'status' => $dataStatus === 'success' ? 'success' : ($dataStatus ?? 'unknown'),
+                'gateway_response' => $resp->json('data'),
+                'ip_address' => $request->ip(),
+            ]
+        );
 
         if ($dataStatus === 'success') {
             // Ensure booking stores the correct reference
@@ -211,16 +226,18 @@ class PaymentController extends Controller
         if ($reference) {
             $booking = Booking::where('payment_reference', $reference)->first();
 
-            Transaction::create([
-                'booking_id' => $booking?->id,
-                'reference' => $reference,
-                'gateway' => 'paystack',
-                'amount' => $booking?->amount ?? 0,
-                'currency' => config('services.paystack.currency', 'NGN'),
-                'status' => $status ?? $event,
-                'gateway_response' => $data,
-                'ip_address' => $request->ip(),
-            ]);
+            Transaction::updateOrCreate(
+                ['reference' => $reference],
+                [
+                    'booking_id' => $booking?->id,
+                    'gateway' => 'paystack',
+                    'amount' => $booking?->amount ?? 0,
+                    'currency' => config('services.paystack.currency', 'NGN'),
+                    'status' => $status ?? $event ?? 'webhook_received',
+                    'gateway_response' => $data,
+                    'ip_address' => $request->ip(),
+                ]
+            );
 
             if ($booking) {
                 if ($event === 'charge.success' || $status === 'success') {
